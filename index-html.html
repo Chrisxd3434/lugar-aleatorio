@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌍 Lugar Aleatorio</title>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#111827;color:white;text-align:center;padding:25px}
+.contenedor{max-width:500px;margin:auto;background:#1f2937;padding:25px;border-radius:20px;box-shadow:0 0 25px #0006}
+button{width:100%;padding:15px;margin-top:10px;border:0;border-radius:12px;font-size:17px;cursor:pointer}
+#generar{background:#22c55e;color:white}#mapa{background:#3b82f6;color:white;display:none}
+.resultado{margin-top:20px;text-align:left;background:#111827;padding:18px;border-radius:15px;line-height:1.7}
+.cargando{color:#facc15}
+</style>
+</head>
+<body>
+<div class="contenedor">
+<h1>🌍 Lugar Aleatorio</h1>
+<button id="generar" onclick="generarLugar()">🎲 Generar lugar</button>
+<div id="resultado" class="resultado">Cargando mapa de países...</div>
+<button id="mapa" onclick="abrirMapa()">🗺️ Ver en Google Maps</button>
+</div>
+
+<script>
+const CONCON_LAT=-32.9236, CONCON_LON=-71.5325;
+const GEOJSON_URL="https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson";
+let paises=null,ultimaLat=null,ultimaLon=null;
+
+async function cargarPaises(){
+ try{
+  const r=await fetch(GEOJSON_URL);
+  if(!r.ok) throw new Error();
+  paises=await r.json();
+  document.getElementById("resultado").innerHTML="✅ Listo. Presiona <b>Generar lugar</b>.";
+ }catch(e){
+  document.getElementById("resultado").innerHTML="❌ No se pudieron cargar los datos de países.";
+ }
+}
+
+function coordenadasAleatorias(){
+ const u=Math.random(),v=Math.random();
+ return {
+  lat:Math.asin(2*u-1)*180/Math.PI,
+  lon:360*v-180
+ };
+}
+
+function distanciaConcon(lat,lon){
+ return turf.distance(turf.point([lon,lat]),turf.point([CONCON_LON,CONCON_LAT]),{units:"kilometers"});
+}
+
+function nombrePais(p){
+ return p.properties.NAME||p.properties.ADMIN||"País desconocido";
+}
+
+function encontrarPais(lat,lon){
+ const punto=turf.point([lon,lat]);
+
+ for(const pais of paises.features){
+  try{
+   if(turf.booleanPointInPolygon(punto,pais)){
+    return {nombre:nombrePais(pais),distancia:0,enTierra:true};
+   }
+  }catch(e){}
+ }
+
+ let mejor=null,menor=Infinity;
+
+ for(const pais of paises.features){
+  if(pais.properties.ISO_A3==="ATA"||nombrePais(pais)==="Antarctica") continue;
+  try{
+   const linea=turf.polygonToLine(pais);
+   const cercano=turf.nearestPointOnLine(linea,punto,{units:"kilometers"});
+   const d=cercano.properties.dist;
+   if(typeof d==="number"&&d<menor){
+    menor=d;
+    mejor={nombre:nombrePais(pais),distancia:d,enTierra:false};
+   }
+  }catch(e){}
+ }
+ return mejor;
+}
+
+function generarLugar(){
+ if(!paises){
+  document.getElementById("resultado").innerHTML="⏳ Espera, todavía estoy cargando los países.";
+  return;
+ }
+
+ const c=coordenadasAleatorias();
+ ultimaLat=c.lat; ultimaLon=c.lon;
+ const info=encontrarPais(c.lat,c.lon);
+ const dc=distanciaConcon(c.lat,c.lon);
+
+ let html=`<h2>📍 Resultado</h2>
+ <p><b>Latitud:</b> ${c.lat.toFixed(6)}°</p>
+ <p><b>Longitud:</b> ${c.lon.toFixed(6)}°</p><hr>
+ <p>${info?.enTierra?"🌍 <b>Está en tierra firme</b>":"🌊 <b>Está en el mar</b>"}</p>`;
+
+ if(info) html+=`<p>🇺🇳 <b>País más cercano:</b> ${info.nombre}</p>
+ <p>📏 <b>Distancia al país:</b> ${info.distancia.toFixed(1)} km</p>`;
+
+ html+=`<hr><p>🇨🇱 <b>Distancia a Concón:</b> ${dc.toFixed(1)} km</p>`;
+ document.getElementById("resultado").innerHTML=html;
+ document.getElementById("mapa").style.display="block";
+}
+
+function abrirMapa(){
+ if(ultimaLat===null)return;
+ window.open(`https://www.google.com/maps?q=${ultimaLat},${ultimaLon}`,"_blank");
+}
+
+cargarPaises();
+</script>
+</body>
+</html>
